@@ -1,0 +1,24 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/superuser/cgal/MotionPlanning/motion_planning.cpp
+iostream
+-
+CGAL/Exact_predicates_exact_constructions_kernel.h
+-
+vector
+-
+fstream
+-
+sstream
+-
+CGAL/convex_hull_2.h
+-
+CGAL/Line_2.h
+-
+

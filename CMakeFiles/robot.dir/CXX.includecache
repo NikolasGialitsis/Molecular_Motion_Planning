@@ -1,0 +1,34 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/superuser/cgal/MotionPlanning/motion_planning.cpp
+CGAL/Exact_predicates_exact_constructions_kernel.h
+-
+CGAL/Delaunay_triangulation_2.h
+-
+CGAL/Triangulation_vertex_base_with_info_2.h
+-
+CGAL/Point_2.h
+-
+CGAL/point_generators_2.h
+-
+CGAL/Random.h
+-
+CGAL/IO/Geomview_stream.h
+-
+CGAL/IO/Polyhedron_geomview_ostream.h
+-
+CGAL/IO/Triangulation_geomview_ostream_2.h
+-
+CGAL/IO/Triangulation_geomview_ostream_3.h
+-
+CGAL/Projection_traits_xy_3.h
+-
+cassert
+-
+
