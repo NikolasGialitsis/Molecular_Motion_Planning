@@ -62,6 +62,57 @@ void PrintFace(Delaunay::Face_handle& face){
 
 }
 
+
+class GraphNode{
+public:
+	Triangle t;
+	Triangle* up,down,left,right;
+	bool is_obstacle;
+	GraphNode(){
+		is_obstacle = false;
+	}
+	GraphNode(Triangle triang){
+		t = triang;
+		GraphNode();
+	}
+
+};
+
+
+
+class VisibilityGraph{
+public:
+	GraphNode* start_node;
+	GraphNode* end_node;
+};
+
+
+
+bool PathSearch(
+		Delaunay::Face_handle start_face,
+		Delaunay::Face_handle end_face,
+		std::vector<Delaunay::Face_handle> obstacles
+	)
+{
+	std::cout<<"Path search.."<<std::endl;
+	Triangle start = FaceToTriangle(start_face);
+	Triangle end = FaceToTriangle(end_face);
+
+
+	CGAL::cpp11::result_of<Intersect_2(Kernel::Triangle_2,Kernel::Triangle_2)>::type
+			result = CGAL::intersection(start,end);
+
+	if(result)return true;
+
+
+	PathSearch(start_face->neighbor(0),end_face,obstacles);
+	PathSearch(start_face->neighbor(1),end_face,obstacles);
+	PathSearch(start_face->neighbor(2),end_face,obstacles);
+	
+
+
+}
+
 int main(int argc , char* argv[]){
 
 
@@ -122,7 +173,7 @@ int main(int argc , char* argv[]){
 
 
 	std::cout << "Place Obstacles .." << std::endl;
-	Vector Obstacles;
+	std::vector<Delaunay::Face_handle> Obstacles;
 	Obstacles.reserve(num_obstacles);
 
 
@@ -144,7 +195,7 @@ int main(int argc , char* argv[]){
 			}
 			
 			Point p(rand()%box_size,rand()%box_size);		
-			Obstacles.push_back(p);
+			
 			std::cout <<  "\t " << p <<std::endl;
 			obstacle_face = T.locate(p,T.all_faces_begin());
 			std::cout<<"Obstacle #"<<i<<std::endl;
@@ -159,17 +210,21 @@ int main(int argc , char* argv[]){
 			if((!result1)&& (!result2)){
 				obstacle_intersect = false;
 				PrintFace(obstacle_face);
+				Obstacles.push_back(obstacle_face);
 			}
 			trys++;
 		}
-
-		
-
+	
 	} 
 
 
 
 	assert(Obstacles.size() == num_obstacles);
+
+
+
+	PathSearch(start_face,end_face,Obstacles);
+
 
 
 
