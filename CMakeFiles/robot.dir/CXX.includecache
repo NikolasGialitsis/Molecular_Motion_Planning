@@ -11,6 +11,8 @@ CGAL/Exact_predicates_exact_constructions_kernel.h
 -
 CGAL/Constrained_Delaunay_triangulation_2.h
 -
+CGAL/Constrained_triangulation_plus_2.h
+-
 CGAL/Triangulation_face_base_with_info_2.h
 -
 CGAL/Polygon_2.h
