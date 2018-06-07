@@ -21,6 +21,14 @@ iostream
 -
 CGAL/Iso_rectangle_2.h
 -
+CGAL/point_generators_2.h
+-
+CGAL/random_polygon_2.h
+-
+CGAL/Random.h
+-
+CGAL/algorithm.h
+-
 CGAL/IO/Geomview_stream.h
 -
 CGAL/IO/Polyhedron_geomview_ostream.h

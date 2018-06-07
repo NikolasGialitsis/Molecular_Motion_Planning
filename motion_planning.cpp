@@ -6,7 +6,10 @@
 #include <CGAL/Triangle_2.h>
 #include <iostream>
 #include <CGAL/Iso_rectangle_2.h>
-
+#include <CGAL/point_generators_2.h>
+#include <CGAL/random_polygon_2.h>
+#include <CGAL/Random.h>
+#include <CGAL/algorithm.h>
 
 //Geomview 
 #include <CGAL/IO/Geomview_stream.h>
@@ -25,11 +28,15 @@
 
 struct FaceInfo2
 {
-  FaceInfo2(){}
+
   int nesting_level;
+  bool visited;
   bool in_domain(){ 
     return nesting_level%2 == 1;
   }
+    FaceInfo2(){
+  		visited = false;
+ 	 }
 };
 typedef CGAL::Exact_predicates_exact_constructions_kernel         K;
 typedef CGAL::Triangulation_vertex_base_2<K>                      Vb;
@@ -39,13 +46,20 @@ typedef CGAL::Triangulation_data_structure_2<Vb,Fb>               TDS;
 typedef CGAL::Exact_predicates_tag                                Itag;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag>  CDT;
 typedef CDT::Point                                                Point;
-typedef CGAL::Polygon_2<K>                                        Polygon_2;
 typedef CGAL::Polyhedron_3<K> Polyhedron;
 typedef K::Point_2 Point_2;
 typedef K::Triangle_2 Triangle;
 typedef std::vector<Point_2> Vector;
 typedef K::Intersect_2 Intersect_2;
 typedef K::Point_3 Point_3;
+
+
+
+typedef std::list<Point_2>                                Container;
+typedef CGAL::Polygon_2<K, Container>                     Polygon_2;
+typedef CGAL::Creator_uniform_2<int, Point_2>             Creator;
+typedef CGAL::Random_points_in_square_2<Point_2, Creator> Point_generator;
+
 
 void  mark_domains(CDT& ct, 
              CDT::Face_handle start, 
@@ -122,32 +136,42 @@ void PrintFace(CDT::Face_handle& face){
 
 
 
-void FindPath(CDT& ct, CDT::Face_handle start, Point_2 EndPoint,CGAL::Geomview_stream& gv){
+void FindPath(CDT& ct, CDT::Face_handle start, Point_2 EndPoint,CGAL::Geomview_stream& gv,int sleep_time){
 
 	std::list<CDT::Face_handle> queue;
 	std::list<CDT::Face_handle> path;
 
+	std::cout<<"START LEVEL : " << start->info().nesting_level<<std::endl;
 	path.push_back(start);
 	queue.push_back(start);
-
+	std::cout<<"Push"<<std::endl;
 	while(! queue.empty()){
 		CDT::Face_handle fh = queue.front();
 		queue.pop_front();
-		std::cout<<"New face"<<std::endl;
+		std::cout<<"Pop" << std::endl;
+		fh->info().visited = true;
+		std::cout<<"\tVisit face"<<std::endl;
+		bool dead_end = true;
 		for(int i = 0; i < 3; i++){
-			CDT::Edge e(fh,i);
 			CDT::Face_handle n = fh->neighbor(i);
-			bool dead_end = true;
+			
 
-			if( ((n->info().nesting_level)%2) == 1){
-
+			if(n->info().visited){
+				std::cout<<"\t\tneighbor visited"<<std::endl;
+				continue;
+			}
+			std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
+			if( (n->info().nesting_level == 0)&&((n->info().nesting_level)%2) == 1){
+				std::cout<<"\t\tneighbor available"<<std::endl;
 				dead_end = false;	
 				path.push_back(n);
 				Triangle current = FaceToTriangle(n);				
 				gv << CGAL::BLUE;
 				gv << current;
+				sleep(sleep_time);
+				
 				queue.push_back(n);
-
+				std::cout<<"Push"<<std::endl;
 				CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
 			    result = CGAL::intersection(current,EndPoint);
 				if(result){
@@ -167,11 +191,19 @@ void FindPath(CDT& ct, CDT::Face_handle start, Point_2 EndPoint,CGAL::Geomview_s
 					}
 				}	
 			}
-			if(dead_end){
-				std::cout<<"Dead end"<<std::endl;
-				path.pop_back();
-			}
-			
+			else if (n->info().nesting_level == 0 )
+				std::cout<<"\t\tneighbor is the bounding box"<<std::endl;	
+			else 
+				std::cout<<"\t\tneighbor is an obstacle"<<std::endl;		
+			Triangle m = FaceToTriangle(n);
+			gv << CGAL:: PURPLE;
+			gv << m;
+		}
+		if(dead_end){
+
+			std::cout<<"\tDead end\n"<<std::endl;
+			//path.pop_back();			
+
 		}
 	}
 	if(queue.empty()){
@@ -185,14 +217,17 @@ void FindPath(CDT& ct, CDT::Face_handle start, Point_2 EndPoint,CGAL::Geomview_s
 }
 
 
+double RADIUS;
+unsigned int MAX_POLY_SIZE;
 
 int main(int argc,char* argv[]){
 
 
 	unsigned int box_size = (argc>2) && (strcmp(argv[1],"-size")==0) ? atoi(argv[2]) : 30;
-	unsigned int num_obstacles = (argc>2) && (strcmp(argv[3],"-obstacles")==0) ? atoi(argv[4]) : box_size/6;
-
-
+	unsigned int num_obstacles = (argc>4) && (strcmp(argv[3],"-obstacles")==0) ? atoi(argv[4]) : box_size/6;
+	int sleep_time = (argc>6) && (strcmp(argv[5],"-sleep")==0) ? atoi(argv[6]) : 0;
+	RADIUS = box_size;
+	MAX_POLY_SIZE = box_size/4;
 	std::cout << "Box :" << box_size << "x"<< box_size << std::endl;
 	std::cout<<"Obstacles = " << num_obstacles << std::endl;
 
@@ -203,7 +238,7 @@ int main(int argc,char* argv[]){
 	gv.set_wired(true);
 
 
-	Point_2 StartPoint(0,0);
+	Point_2 StartPoint(0,(box_size-1)/2);
 	Point_2 EndPoint(box_size-1,(box_size-1)/2);
 	gv << CGAL::RED;
 	gv << StartPoint;
@@ -240,74 +275,56 @@ int main(int argc,char* argv[]){
 			if(tries == 10){
 				std::cout<<"Grid size too small or too many obstacles:= unable to place obstacle #"<<i<<std::endl;
 				return -1;
-			}
+			}					
+		   
+		   Polygon_2 Obstacle;
+		   std::list<Point_2>   initial_point_set;
+		   std::list<Point_2>   positive_point_set;
+		   CGAL::Random         rand;
+		   //std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
+		   	int size = rand.get_int(4, MAX_POLY_SIZE);
+
+	   		CGAL::copy_n_unique(Point_generator(RADIUS), size,
+		                       std::back_inserter(initial_point_set));
 			
 
-			int obstacle_area = 0;
-			bool obstacle_big = true;
-			
-			
-			
 
-			int ax,ay,bx,by,cx,cy,dx,dy;
-			int times_resized = 0;
-			while(obstacle_big){
-
-
-				Polygon_2 Obstacle1;
-				ax = rand()%box_size;				
-				bx = rand()%box_size;
-				cx = rand()%box_size;
-				dx = rand()%box_size;
-
-				ay = rand()%box_size;
-				by = rand()%box_size;
-				cy = rand()%box_size;
-				dy = rand()%box_size;
-
-				Point a(ax,ay);		
-				Point b(bx,by);
-				Point c(cx,cy);
-				Point d(dx,dy);
-				
-
-				
-				Obstacle1.push_back(a);
-				Obstacle1.push_back(b);
-				Obstacle1.push_back(c);
-				Obstacle1.push_back(d);
-
-				Polygon_2::FT pol_area = Obstacle1.area();
-
-				if(pol_area < 0) pol_area = - pol_area;
-			
-				if(( pol_area <= ((box_size*box_size)/50.0) )&& pol_area > 20.0){
-					std::cout << "Obstacle #"<< i<< "  area after resizing "<< times_resized<< " times is "<< pol_area << std::endl;
-					obstacle_big = false;
+			for(std::list<Point_2>::iterator it = initial_point_set.begin();it != initial_point_set.end() ; it++){
+				if((it->hx() < 0)){
+					if((it->hy() < 0)){
+						positive_point_set.push_back(Point_2(-it->hx(),-it->hy()));
+					}
+					else{
+						positive_point_set.push_back(Point_2(-it->hx(),it->hy()));
+					}
 				}
-				else 
-					times_resized++;
+				else{
+					if((it->hy() < 0)){
+						positive_point_set.push_back(Point_2(it->hx(),-it->hy()));
+					}
+					else{
+						positive_point_set.push_back(Point_2(it->hx(),it->hy()));
+					}
+				}
 			}
-			
+
+
+		    CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
+		                          positive_point_set.begin());
+						
 	
-			Point a(ax,ay);		
-			Point b(bx,by);
-			Point c(cx,cy);
-			Point d(dx,dy);
-
-			Polygon_2 Obstacle;
-			Obstacle.push_back(a);			
-			Obstacle.push_back(b);
-			Obstacle.push_back(c);
-			Obstacle.push_back(d);
-
-
+			
+			Point a(Obstacle.left_vertex()->hx(),Obstacle.left_vertex()->hy());		
+			Point b(Obstacle.top_vertex()->hx(),Obstacle.top_vertex()->hy());
+			Point c(Obstacle.right_vertex()->hx(),Obstacle.right_vertex()->hy());
+			Point d(Obstacle.bottom_vertex()->hx(),Obstacle.bottom_vertex()->hy());
 			
 
-			Point_3 p( a.hx(), a.hy(), 0.0);
-			Point_3 q( b.hx(), b.hy(), 0.0);
-			Point_3 r( c.hx(), c.hy(), 0.0);
-			Point_3 s( d.hx(), d.hy(), 0.0);
+		   
+			Point_3 p(Obstacle.left_vertex()->hx(),Obstacle.left_vertex()->hy(),0);
+			Point_3 q(Obstacle.top_vertex()->hx(),Obstacle.top_vertex()->hy(),0);
+			Point_3 r(Obstacle.right_vertex()->hx(),Obstacle.right_vertex()->hy(),0);
+			Point_3 s(Obstacle.bottom_vertex()->hx(),Obstacle.bottom_vertex()->hy(),0);	
 
 			Polyhedron P;
 			P.make_tetrahedron( p, q, r, s);
@@ -359,9 +376,6 @@ int main(int argc,char* argv[]){
 	assert(Obstacles.size() == num_obstacles);
 
 
-
-
-
 	//Mark facets that are inside the domain bounded by the polygon
 	mark_domains(cdt);
 
@@ -379,11 +393,6 @@ int main(int argc,char* argv[]){
 	
 	gv << CGAL::RED;
 	gv << cdt;
-
-	//gv << CGAL::BLUE;
-	//gv << polygon1;
-	//gv << CGAL::PURPLE;
-	//gv << Bounding_box;
 
 	std::cout << "OK" << std::endl;
 	
@@ -408,7 +417,7 @@ int main(int argc,char* argv[]){
 
 
 
-	FindPath(cdt,start_face,EndPoint,gv);
+	FindPath(cdt,start_face,EndPoint,gv,sleep_time);
 
 	std::cout << "Enter a key to finish" << std::endl;
 	char ch;
