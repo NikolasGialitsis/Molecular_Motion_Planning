@@ -26,7 +26,8 @@
 #include <cassert>
 #include <CGAL/intersections.h>
 #include <CGAL/Polyhedron_3.h>
-
+#include <typeinfo>
+#include <boost/optional/optional_io.hpp>
 struct FaceInfo2
 {
 
@@ -44,7 +45,8 @@ typedef CGAL::Triangulation_vertex_base_2<K>                      Vb;
 typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo2,K>    Fbb;
 typedef CGAL::Constrained_triangulation_face_base_2<K,Fbb>        Fb;
 typedef CGAL::Triangulation_data_structure_2<Vb,Fb>               TDS;
-typedef CGAL::Exact_predicates_tag                                Itag;
+typedef CGAL::Exact_intersections_tag                            Itag;
+//typedef CGAL::No_intersection_tag		                          Itag;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag>  CDT;
 typedef CGAL::Constrained_triangulation_plus_2<CDT> 			  CDTplus;
 typedef CDT::Point                                                Point;
@@ -61,6 +63,7 @@ typedef std::list<Point_2>                                Container;
 typedef CGAL::Polygon_2<K, Container>                     Polygon_2;
 typedef CGAL::Creator_uniform_2<int, Point_2>             Creator;
 typedef CGAL::Random_points_in_square_2<Point_2, Creator> Point_generator;
+using std::cout; using std::endl;
 
 Triangle FaceToTriangle(CDTplus::Face_handle& face){
 	Point_2 a,b,c;
@@ -99,15 +102,15 @@ void  mark_domains(CDTplus& ct,
     queue.pop_front();
     if(fh->info().nesting_level == -1){
       fh->info().nesting_level = index;
-      std::cout<<"INDEX "<<index<<std::endl;
+      //std::cout<<"INDEX "<<index<<std::endl;
       Triangle t = FaceToTriangle(fh);
       if(fh->info().in_domain()){
       	lvlgv << CGAL::BLUE;
-      	lvlgv << t;
+      	//lvlgv << t;
       }
       else{
       	lvlgv << CGAL::RED;
-      	lvlgv << t;
+      	//lvlgv << t;
       }      
       
 
@@ -153,18 +156,22 @@ void mark_domains(CDTplus& cdt,CGAL::Geomview_stream& lvlgv){
 
 
 
-void FindPath(CDTplus& ct, CDTplus::Face_handle start, Point_2 EndPoint,CGAL::Geomview_stream& gv,int sleep_time){
+void FindPath(CDTplus& ct, CDTplus::Face_handle start, 
+	Point_2 EndPoint,
+	std::vector<K::Iso_rectangle_2> obstacles_vector,
+	CGAL::Geomview_stream& gv,int sleep_time){
 
 	std::list<CDTplus::Face_handle> queue;
 	std::list<CDTplus::Face_handle> path;
 
 	std::cout<<"START LEVEL : " << start->info().nesting_level<<std::endl;
-	path.push_back(start);
+
 	queue.push_back(start);
 	std::cout<<"Push"<<std::endl;
 	while(! queue.empty()){
 		CDTplus::Face_handle fh = queue.front();
 		queue.pop_front();
+		path.push_back(fh);
 		std::cout<<"Pop" << std::endl;
 		fh->info().visited = true;
 		std::cout<<"\tVisit face"<<std::endl;
@@ -180,50 +187,67 @@ void FindPath(CDTplus& ct, CDTplus::Face_handle start, Point_2 EndPoint,CGAL::Ge
 				std::cout<<"\t\tneighbor visited"<<std::endl;
 				continue;
 			}
-			std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
-			if( (n->info().nesting_level != -1)&&((n->info().nesting_level)%2) == 1){
-				std::cout<<"\t\tneighbor available"<<std::endl;
-				dead_end = false;	
-				path.push_back(n);
-				Triangle current = FaceToTriangle(n);				
-				gv << CGAL::BLUE;
-				gv << current;
-				sleep(sleep_time);
-				
-				queue.push_back(n);
-				std::cout<<"Push"<<std::endl;
-				CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
-			    result = CGAL::intersection(current,EndPoint);
-				if(result){
-					std::cout<<"PATH FOUND"<<std::endl;
-					std::list<CDTplus::Face_handle>::iterator it;
+			//std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
 
-					int step = 0;
-					for( it = path.begin(); it != path.end(); it++){
-						Triangle t = FaceToTriangle(*it);
+
+
+			Triangle current = FaceToTriangle(n);	
+			for(std::vector<K::Iso_rectangle_2>::iterator o = obstacles_vector.begin()
+				; o != obstacles_vector.end() ; o++)
+			{
+				K::Iso_rectangle_2 Obstacle = *o;
+				//CGAL::cpp11::result_of<Intersect_2(K::Iso_rectangle_2,Triangle)>::type
+			   	CGAL::Object result_obj;
+			    result_obj = CGAL::intersection(current,Obstacle);
+			   
+			    Point_2 test_point;
+
+//			    std::cout<<"RESULT TYPE = "<< <CGAL::cpp11::result_of<Intersect_2(K::Iso_rectangle_2,Triangle)>::type> result_obj << std::endl;
+				if(CGAL::assign(test_point,result_obj) || (!result_obj)){	
+					std::cout<<"\t\tneighbor available"<<std::endl;
+					dead_end = false;	
+					
+								
+					//gv << CGAL::BLUE;
+					//gv << current;
+					//f(sleep_time);
+					
+					queue.push_back(n);
+					std::cout<<"Push"<<std::endl;
+					CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
+				    result = CGAL::intersection(current,EndPoint);
+					if(result){
+						std::cout<<"PATH FOUND"<<std::endl;
+						std::list<CDTplus::Face_handle>::iterator it;
+						path.push_back(n);
+						int step = 0;
 						//gv << CGAL::BLUE;
-						//gv << t;
-						std::cout<<"Step "<<step++ <<std::endl;
-						PrintFace(*it);										
-						
+						//gv << current;
+						for( it = path.begin(); it != path.end(); it++){
+							Triangle t = FaceToTriangle(*it);
+							gv << CGAL::BLUE;
+							gv << t;
+							std::cout<<"Step "<<step++ <<std::endl;
+							//PrintFace(*it);
+							sleep(sleep_time);
+						}
 						return;
-
-					}
-				}	
+					}	
+				}
+				else{
+					std::cout<<"\t\tneighbor is an obstacle"<<std::endl;	
+				}
 			}
-			else if (n->info().nesting_level == 0 )
-				std::cout<<"\t\tneighbor is the bounding box"<<std::endl;	
-			else 
-				std::cout<<"\t\tneighbor is an obstacle"<<std::endl;		
-			Triangle m = FaceToTriangle(n);
-			gv << CGAL:: PURPLE;
-			gv << m;
-			sleep(sleep_time);
+		
+
+			//gv << CGAL:: PURPLE;
+			//gv << current;
+			//sleep(sleep_time);
 		}
 		if(dead_end){
 
 			std::cout<<"\tDead end\n"<<std::endl;
-			//path.pop_back();			
+			path.pop_back();			
 
 		}
 	}
@@ -247,8 +271,8 @@ int main(int argc,char* argv[]){
 	unsigned int box_size = (argc>2) && (strcmp(argv[1],"-size")==0) ? atoi(argv[2]) : 30;
 	unsigned int num_obstacles = (argc>4) && (strcmp(argv[3],"-obstacles")==0) ? atoi(argv[4]) : box_size/6;
 	int sleep_time = (argc>6) && (strcmp(argv[5],"-sleep")==0) ? atoi(argv[6]) : 0;
-	RADIUS = box_size;
-	MAX_POLY_SIZE = box_size/10;
+	RADIUS = box_size-0.1;
+	MAX_POLY_SIZE = 50;
 	std::cout << "Box :" << box_size << "x"<< box_size << std::endl;
 	std::cout<<"Obstacles = " << num_obstacles << std::endl;
 
@@ -263,13 +287,19 @@ int main(int argc,char* argv[]){
 	CGAL::Geomview_stream lvlgv(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
 	lvlgv.clear();
 	lvlgv.set_line_width(10);
-	lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
+	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
 	lvlgv.set_wired(false);
 
 	Point_2 StartPoint(0,(box_size-1)/2);
 	Point_2 EndPoint(box_size-1,(box_size-1)/2);
-	gv << CGAL::RED;
+
+
+	gv.set_vertex_radius(50);
+
+	gv << CGAL::GREEN;
 	gv << StartPoint;
+
+	gv << CGAL::RED;	
 	gv << EndPoint;
 
 
@@ -285,14 +315,17 @@ int main(int argc,char* argv[]){
 
 
 	CDTplus cdt;
-
-
-	cdt.insert_constraint(Bounding_box.vertices_begin(), Bounding_box.vertices_end(), true);
-
-
-	srand(time(NULL));
+	cdt.insert_constraint(Point(0,0), Point(0,box_size-1));
+	cdt.insert_constraint(Point(0,box_size-1), Point(box_size-1,box_size-1));
+	cdt.insert_constraint(Point(box_size-1,box_size-1), Point(box_size-1,0));
+	cdt.insert_constraint(Point(box_size-1,0), Point(0,0));
+	std::cout<<"Inserted bounding box"<<std::endl;
 	std::vector<K::Iso_rectangle_2> obstacles_vector;
 
+	K::Iso_rectangle_2 rect_bb(Point(0,0),Point(0,box_size-1),Point(box_size-1,box_size-1),Point_2(box_size-1,0));
+
+
+	obstacles_vector.push_back(rect_bb);
 	//construct two non-intersecting nested polygons  
 
 	bool obstacle_intersect = true;
@@ -308,10 +341,20 @@ int main(int argc,char* argv[]){
 			}					
 		   
 		   Polygon_2 Obstacle;
+		   Obstacle.push_back(Point_2(20,20));
+		   Obstacle.push_back(Point_2(20,60));
+		   Obstacle.push_back(Point_2(50,70));
+		   Obstacle.push_back(Point_2(60,30));
+
+		     // check if the polygon is convex
+  			std::cout << "The polygon is " <<
+    		(Obstacle.is_convex() ? "" : "not ") << "convex." << std::endl;
+			
+
 		   std::list<Point_2>   initial_point_set;
 		   std::list<Point_2>   positive_point_set;
 		   CGAL::Random         rand;
-		   //std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
+	    	std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
 		   	int size = rand.get_int(4, MAX_POLY_SIZE);
 
 	   		CGAL::copy_n_unique(Point_generator(RADIUS), size,
@@ -339,22 +382,51 @@ int main(int argc,char* argv[]){
 			}
 
 
-		    CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
+		    /*CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
 		                          positive_point_set.begin());
-						
-	
+				
+
+			*/
+
+
+			std::_List_iterator<CGAL::Point_2<CGAL::Epeck> > iter = Obstacle.vertices_begin();
 			
-			Point a(Obstacle.left_vertex()->hx(),Obstacle.left_vertex()->hy());		
-			Point b(Obstacle.top_vertex()->hx(),Obstacle.top_vertex()->hy());
-			Point c(Obstacle.right_vertex()->hx(),Obstacle.right_vertex()->hy());
-			Point d(Obstacle.bottom_vertex()->hx(),Obstacle.bottom_vertex()->hy());
+			Point a(iter->hx(),iter->hy());	
+			iter++;	
+			Point b(iter->hx(),iter->hy());	
+			iter++;	
+			Point c(iter->hx(),iter->hy());	
+			iter++;	
+			Point d(iter->hx(),iter->hy());	
+
+
+			gv << CGAL::ORANGE;
+			gv << a;
+			sleep(sleep_time);
+			gv << b;
+			sleep(sleep_time);
+
+			gv << c;
+			sleep(sleep_time);
+			gv << d;
+			sleep(sleep_time);
+				std::cout << "Enter a key to finish" << std::endl;
+	char ch;
+	std::cin >> ch;
+
+			return 0;
+					
 			
 
-		   
-			Point_3 p(Obstacle.left_vertex()->hx(),Obstacle.left_vertex()->hy(),0);
-			Point_3 q(Obstacle.top_vertex()->hx(),Obstacle.top_vertex()->hy(),0);
-			Point_3 r(Obstacle.right_vertex()->hx(),Obstacle.right_vertex()->hy(),0);
-			Point_3 s(Obstacle.bottom_vertex()->hx(),Obstacle.bottom_vertex()->hy(),0);	
+		   	iter = Obstacle.vertices_begin();
+			Point_3 p(iter->hx(),iter->hy(),0);	
+			iter++;	
+			Point_3 q(iter->hx(),iter->hy(),0);	
+			iter++;	
+			Point_3 r(iter->hx(),iter->hy(),0);	
+			iter++;	
+			Point_3 s(iter->hx(),iter->hy(),0);	
+					
 
 			Polyhedron P;
 			P.make_tetrahedron( p, q, r, s);
@@ -385,16 +457,30 @@ int main(int argc,char* argv[]){
 		    }
 		    
 			
-
+		    
 			if((!result1)&& (!result2) && (!obstacles_overlap)){
 				obstacle_intersect = false;
-				cdt.insert_constraint(Obstacle.vertices_begin(), Obstacle.vertices_end(), true);
+				//std::cout<<"Obstacle : "<<Obstacle<<std::endl;
+				
+				//cdt.insert_constraint(Obstacle.vertices_begin(), Obstacle.vertices_end(), true);
+
+				//std::_List_iterator<CGAL::Point_2<CGAL::Epeck> > c = Obstacle.vertices_begin();
+
+
+				cdt.insert_constraint(Obstacle.vertices_begin(),Obstacle.vertices_end(),true);
+				
+
+
+				if(!cdt.is_valid()){
+					std::cout<<"CDT not valid"<<std::endl;
+					return -2;
+				}
 				obstacles_vector.push_back(rect_obstacle);
 				std::cout<<"Placed obstacle after "<<tries<<" tries"<<std::endl;
-				gv << CGAL::RED;
-				gv << P;
+
 
 			}
+			
 			tries++;
 		}
 
@@ -404,7 +490,7 @@ int main(int argc,char* argv[]){
 
 
 	assert(Obstacles.size() == num_obstacles);
-
+	
 
 	//Mark facets that are inside the domain bounded by the polygon
 	mark_domains(cdt,lvlgv);
@@ -448,19 +534,19 @@ int main(int argc,char* argv[]){
 	CDTplus::Face_handle start_face = cdt.locate(StartPoint,cdt.all_faces_begin());
 	std::cout<<"Starting Triangle"<<std::endl;
 	Triangle start_triangle = FaceToTriangle(start_face);
-	lvlgv << CGAL::GREEN;
-	lvlgv << start_triangle;
+	//gv << CGAL::GREEN;
+	//gv << start_triangle;
 	PrintFace(start_face);
 
 	std::cout << "Locate ending point..." << std::endl;
 	CDTplus::Face_handle end_face = cdt.locate(EndPoint,cdt.all_faces_begin());
 	std::cout<<"Ending Triangle"<<std::endl;
 	Triangle end_triangle = FaceToTriangle(end_face);
-	lvlgv << CGAL::ORANGE;
-	lvlgv << end_triangle;
+	//gv << CGAL::ORANGE;
+	//gv << end_triangle;
 	PrintFace(end_face);
 
-	FindPath(cdt,start_face,EndPoint,gv,sleep_time);
+	FindPath(cdt,start_face,EndPoint,obstacles_vector,gv,sleep_time);
 
 	std::cout << "Enter a key to finish" << std::endl;
 	char ch;
