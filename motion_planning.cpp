@@ -90,7 +90,7 @@ void  mark_domains(CDTplus& ct,
              CDTplus::Face_handle start, 
              int index, 
              std::list<CDTplus::Edge>& border,
-             CGAL::Geomview_stream& lvlgv )
+             CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain )
 {
   if(start->info().nesting_level != -1){
     return;
@@ -105,12 +105,12 @@ void  mark_domains(CDTplus& ct,
       //std::cout<<"INDEX "<<index<<std::endl;
       Triangle t = FaceToTriangle(fh);
       if(fh->info().in_domain()){
-      	lvlgv << CGAL::BLUE;
-      	//lvlgv << t;
+      	indomain << CGAL::BLUE;
+      	indomain << t;
       }
       else{
-      	lvlgv << CGAL::RED;
-      	//lvlgv << t;
+      	outdomain << CGAL::RED;
+      	outdomain << t;
       }      
       
 
@@ -131,21 +131,21 @@ void  mark_domains(CDTplus& ct,
 //level of 0. Then we recursively consider the non-explored facets incident 
 //to constrained edges bounding the former set and increase the nesting level by 1.
 //Facets in the domain are those with an odd nesting level.
-void mark_domains(CDTplus& cdt,CGAL::Geomview_stream& lvlgv){
+void mark_domains(CDTplus& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain){
  
   for(CDTplus::All_faces_iterator it = cdt.all_faces_begin(); it != cdt.all_faces_end(); ++it){
     it->info().nesting_level = -1;
   }
  
   std::list<CDTplus::Edge> border;
-  mark_domains(cdt, cdt.infinite_face(), 0, border,lvlgv);
+  mark_domains(cdt, cdt.infinite_face(), 0, border,indomain,outdomain);
  
   while(! border.empty()){
     CDTplus::Edge e = border.front();
     border.pop_front();
     CDTplus::Face_handle n = e.first->neighbor(e.second);
     if(n->info().nesting_level == -1){
-      mark_domains(cdt, n, e.first->info().nesting_level+1, border,lvlgv);
+      mark_domains(cdt, n, e.first->info().nesting_level+1, border,indomain,outdomain);
     }
  
   }
@@ -165,12 +165,11 @@ void FindPath(CDTplus& ct, CDTplus::Face_handle start,
 	std::list<CDTplus::Face_handle> path;
 
 	std::cout<<"START LEVEL : " << start->info().nesting_level<<std::endl;
-
 	queue.push_back(start);
 	std::cout<<"Push"<<std::endl;
 	while(! queue.empty()){
-		CDTplus::Face_handle fh = queue.front();
-		queue.pop_front();
+		CDTplus::Face_handle fh = queue.back();
+		queue.pop_back();
 		path.push_back(fh);
 		std::cout<<"Pop" << std::endl;
 		fh->info().visited = true;
@@ -189,65 +188,42 @@ void FindPath(CDTplus& ct, CDTplus::Face_handle start,
 			}
 			//std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
 
-
-
 			Triangle current = FaceToTriangle(n);	
-			for(std::vector<K::Iso_rectangle_2>::iterator o = obstacles_vector.begin()
-				; o != obstacles_vector.end() ; o++)
-			{
-				K::Iso_rectangle_2 Obstacle = *o;
-				//CGAL::cpp11::result_of<Intersect_2(K::Iso_rectangle_2,Triangle)>::type
-			   	CGAL::Object result_obj;
-			    result_obj = CGAL::intersection(current,Obstacle);
-			   
-			    Point_2 test_point;
-
-//			    std::cout<<"RESULT TYPE = "<< <CGAL::cpp11::result_of<Intersect_2(K::Iso_rectangle_2,Triangle)>::type> result_obj << std::endl;
-				if(CGAL::assign(test_point,result_obj) || (!result_obj)){	
-					std::cout<<"\t\tneighbor available"<<std::endl;
-					dead_end = false;	
-					
-								
-					//gv << CGAL::BLUE;
-					//gv << current;
-					//f(sleep_time);
-					
-					queue.push_back(n);
-					std::cout<<"Push"<<std::endl;
-					CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
-				    result = CGAL::intersection(current,EndPoint);
-					if(result){
-						std::cout<<"PATH FOUND"<<std::endl;
-						std::list<CDTplus::Face_handle>::iterator it;
-						path.push_back(n);
-						int step = 0;
-						//gv << CGAL::BLUE;
-						//gv << current;
-						for( it = path.begin(); it != path.end(); it++){
-							Triangle t = FaceToTriangle(*it);
-							gv << CGAL::BLUE;
-							gv << t;
-							std::cout<<"Step "<<step++ <<std::endl;
-							//PrintFace(*it);
-							sleep(sleep_time);
-						}
-						return;
-					}	
+			if(n->info().in_domain() ){
+				
+				queue.push_back(n);
+				std::cout<<"Push"<<std::endl;
+				CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
+			    result = CGAL::intersection(current,EndPoint);
+				if(result){
+					std::cout<<"PATH FOUND"<<std::endl;
+					std::list<CDTplus::Face_handle>::iterator it;
+					path.push_back(n);
+					int step = 0;
+					for( it = path.begin(); it != path.end(); it++){
+						Triangle t = FaceToTriangle(*it);
+						gv << CGAL::BLUE;
+						gv << t;
+						//std::cout<<"Step "<<step++ <<std::endl;
+						//PrintFace(*it);
+						sleep(sleep_time);
+					}
+					return;
 				}
+
+
 				else{
+
 					std::cout<<"\t\tneighbor is an obstacle"<<std::endl;	
 				}
+				
 			}
-		
-
-			//gv << CGAL:: PURPLE;
-			//gv << current;
-			//sleep(sleep_time);
+			
 		}
 		if(dead_end){
 
 			std::cout<<"\tDead end\n"<<std::endl;
-			path.pop_back();			
+			//path.pop_back();			
 
 		}
 	}
@@ -284,11 +260,18 @@ int main(int argc,char* argv[]){
 
 
 
-	CGAL::Geomview_stream lvlgv(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
-	lvlgv.clear();
-	lvlgv.set_line_width(10);
+	CGAL::Geomview_stream indomain(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
+	indomain.clear();
+	indomain.set_line_width(10);
 	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
-	lvlgv.set_wired(false);
+	indomain.set_wired(false);
+
+
+	CGAL::Geomview_stream outdomain(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
+	outdomain.clear();
+	outdomain.set_line_width(10);
+	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
+	outdomain.set_wired(false);
 
 	Point_2 StartPoint(0,(box_size-1)/2);
 	Point_2 EndPoint(box_size-1,(box_size-1)/2);
@@ -341,15 +324,13 @@ int main(int argc,char* argv[]){
 			}					
 		   
 		   Polygon_2 Obstacle;
-		   Obstacle.push_back(Point_2(20,20));
+		   /*Obstacle.push_back(Point_2(20,20));
 		   Obstacle.push_back(Point_2(20,60));
 		   Obstacle.push_back(Point_2(50,70));
 		   Obstacle.push_back(Point_2(60,30));
+			*/
 
-		     // check if the polygon is convex
-  			std::cout << "The polygon is " <<
-    		(Obstacle.is_convex() ? "" : "not ") << "convex." << std::endl;
-			
+
 
 		   std::list<Point_2>   initial_point_set;
 		   std::list<Point_2>   positive_point_set;
@@ -382,11 +363,15 @@ int main(int argc,char* argv[]){
 			}
 
 
-		    /*CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
+		    CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
 		                          positive_point_set.begin());
 				
 
-			*/
+			
+					     // check if the polygon is convex
+  			std::cout << "The polygon is " <<
+    		(Obstacle.is_convex() ? "" : "not ") << "convex." << std::endl;
+			
 
 
 			std::_List_iterator<CGAL::Point_2<CGAL::Epeck> > iter = Obstacle.vertices_begin();
@@ -399,24 +384,6 @@ int main(int argc,char* argv[]){
 			iter++;	
 			Point d(iter->hx(),iter->hy());	
 
-
-			gv << CGAL::ORANGE;
-			gv << a;
-			sleep(sleep_time);
-			gv << b;
-			sleep(sleep_time);
-
-			gv << c;
-			sleep(sleep_time);
-			gv << d;
-			sleep(sleep_time);
-				std::cout << "Enter a key to finish" << std::endl;
-	char ch;
-	std::cin >> ch;
-
-			return 0;
-					
-			
 
 		   	iter = Obstacle.vertices_begin();
 			Point_3 p(iter->hx(),iter->hy(),0);	
@@ -468,7 +435,8 @@ int main(int argc,char* argv[]){
 
 
 				cdt.insert_constraint(Obstacle.vertices_begin(),Obstacle.vertices_end(),true);
-				
+				gv << CGAL::RED;
+				gv << P;
 
 
 				if(!cdt.is_valid()){
@@ -493,7 +461,7 @@ int main(int argc,char* argv[]){
 	
 
 	//Mark facets that are inside the domain bounded by the polygon
-	mark_domains(cdt,lvlgv);
+	mark_domains(cdt,indomain,outdomain);
 
 
 
