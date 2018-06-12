@@ -7,11 +7,9 @@
 #IncludeRegexTransform: 
 
 /home/superuser/cgal/MotionPlanning/motion_planning.cpp
-CGAL/Exact_predicates_exact_constructions_kernel.h
+CGAL/Exact_predicates_inexact_constructions_kernel.h
 -
 CGAL/Constrained_Delaunay_triangulation_2.h
--
-CGAL/Constrained_triangulation_plus_2.h
 -
 CGAL/Triangulation_face_base_with_info_2.h
 -
@@ -52,5 +50,7 @@ CGAL/Polyhedron_3.h
 typeinfo
 -
 boost/optional/optional_io.hpp
+-
+CGAL/enum.h
 -
 

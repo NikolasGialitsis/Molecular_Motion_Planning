@@ -1,7 +1,6 @@
 
-#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/Constrained_triangulation_plus_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/Polygon_2.h>
 #include <CGAL/Triangle_2.h>
@@ -28,6 +27,7 @@
 #include <CGAL/Polyhedron_3.h>
 #include <typeinfo>
 #include <boost/optional/optional_io.hpp>
+#include <CGAL/enum.h>
 struct FaceInfo2
 {
 
@@ -40,41 +40,40 @@ struct FaceInfo2
   		visited = false;
  	 }
 };
-typedef CGAL::Exact_predicates_exact_constructions_kernel         K;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel       K;
 typedef CGAL::Triangulation_vertex_base_2<K>                      Vb;
 typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo2,K>    Fbb;
 typedef CGAL::Constrained_triangulation_face_base_2<K,Fbb>        Fb;
 typedef CGAL::Triangulation_data_structure_2<Vb,Fb>               TDS;
-typedef CGAL::Exact_intersections_tag                            Itag;
-//typedef CGAL::No_intersection_tag		                          Itag;
+typedef CGAL::Exact_predicates_tag                                Itag;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag>  CDT;
-typedef CGAL::Constrained_triangulation_plus_2<CDT> 			  CDTplus;
 typedef CDT::Point                                                Point;
+//typedef CGAL::Constrained_triangulation_plus_2<CDT> 			  CDTplus;	
 typedef CGAL::Polyhedron_3<K> Polyhedron;
 typedef K::Point_2 Point_2;
 typedef K::Triangle_2 Triangle;
-typedef std::vector<Point_2> Vector;
+typedef std::vector<Point> Vector;
 typedef K::Intersect_2 Intersect_2;
 typedef K::Point_3 Point_3;
 
 
 
-typedef std::list<Point_2>                                Container;
+typedef std::list<Point>                                Container;
 typedef CGAL::Polygon_2<K, Container>                     Polygon_2;
-typedef CGAL::Creator_uniform_2<int, Point_2>             Creator;
-typedef CGAL::Random_points_in_square_2<Point_2, Creator> Point_generator;
+typedef CGAL::Creator_uniform_2<int, Point>             Creator;
+typedef CGAL::Random_points_in_square_2<Point, Creator> Point_generator;
 using std::cout; using std::endl;
 
-Triangle FaceToTriangle(CDTplus::Face_handle& face){
-	Point_2 a,b,c;
+Triangle FaceToTriangle(CDT::Face_handle& face){
+	Point a,b,c;
 	a = face->vertex(0)->point();
 	b = face->vertex(1)->point();
 	c = face->vertex(2)->point();
 	return Triangle(a,b,c);
 }
 
-void PrintFace(CDTplus::Face_handle& face){
-	Point_2 a,b,c;
+void PrintFace(CDT::Face_handle& face){
+	Point a,b,c;
 	a = face->vertex(0)->point();
 	b = face->vertex(1)->point();
 	c = face->vertex(2)->point();
@@ -86,10 +85,10 @@ void PrintFace(CDTplus::Face_handle& face){
 
 
 
-void  mark_domains(CDTplus& ct, 
-             CDTplus::Face_handle start, 
+void  mark_domains(CDT& ct, 
+             CDT::Face_handle start, 
              int index, 
-             std::list<CDTplus::Edge>& border,
+             std::list<CDT::Edge>& border,
              CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain )
 {
   if(start->info().nesting_level != -1){
@@ -98,7 +97,7 @@ void  mark_domains(CDTplus& ct,
   std::list<CDT::Face_handle> queue;
   queue.push_back(start);
   while(! queue.empty()){
-    CDTplus::Face_handle fh = queue.front();
+    CDT::Face_handle fh = queue.front();
     queue.pop_front();
     if(fh->info().nesting_level == -1){
       fh->info().nesting_level = index;
@@ -115,8 +114,8 @@ void  mark_domains(CDTplus& ct,
       
 
       for(int i = 0; i < 3; i++){
-        CDTplus::Edge e(fh,i);
-        CDTplus::Face_handle n = fh->neighbor(i);
+        CDT::Edge e(fh,i);
+        CDT::Face_handle n = fh->neighbor(i);
         if(n->info().nesting_level == -1){
           if(ct.is_constrained(e)) border.push_back(e);
           else queue.push_back(n);
@@ -131,19 +130,19 @@ void  mark_domains(CDTplus& ct,
 //level of 0. Then we recursively consider the non-explored facets incident 
 //to constrained edges bounding the former set and increase the nesting level by 1.
 //Facets in the domain are those with an odd nesting level.
-void mark_domains(CDTplus& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain){
+void mark_domains(CDT& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain){
  
-  for(CDTplus::All_faces_iterator it = cdt.all_faces_begin(); it != cdt.all_faces_end(); ++it){
+  for(CDT::All_faces_iterator it = cdt.all_faces_begin(); it != cdt.all_faces_end(); ++it){
     it->info().nesting_level = -1;
   }
  
-  std::list<CDTplus::Edge> border;
+  std::list<CDT::Edge> border;
   mark_domains(cdt, cdt.infinite_face(), 0, border,indomain,outdomain);
  
   while(! border.empty()){
-    CDTplus::Edge e = border.front();
+    CDT::Edge e = border.front();
     border.pop_front();
-    CDTplus::Face_handle n = e.first->neighbor(e.second);
+    CDT::Face_handle n = e.first->neighbor(e.second);
     if(n->info().nesting_level == -1){
       mark_domains(cdt, n, e.first->info().nesting_level+1, border,indomain,outdomain);
     }
@@ -156,19 +155,19 @@ void mark_domains(CDTplus& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_s
 
 
 
-void FindPath(CDTplus& ct, CDTplus::Face_handle start, 
-	Point_2 EndPoint,
+void FindPath(CDT& ct, CDT::Face_handle start, 
+	Point  EndPoint,
 	std::vector<K::Iso_rectangle_2> obstacles_vector,
 	CGAL::Geomview_stream& gv,int sleep_time){
 
-	std::list<CDTplus::Face_handle> queue;
-	std::list<CDTplus::Face_handle> path;
+	std::list<CDT::Face_handle> queue;
+	std::list<CDT::Face_handle> path;
 
 	std::cout<<"START LEVEL : " << start->info().nesting_level<<std::endl;
 	queue.push_back(start);
 	std::cout<<"Push"<<std::endl;
 	while(! queue.empty()){
-		CDTplus::Face_handle fh = queue.back();
+		CDT::Face_handle fh = queue.back();
 		queue.pop_back();
 		path.push_back(fh);
 		std::cout<<"Pop" << std::endl;
@@ -176,7 +175,7 @@ void FindPath(CDTplus& ct, CDTplus::Face_handle start,
 		std::cout<<"\tVisit face"<<std::endl;
 		bool dead_end = true;
 		for(int i = 0; i < 3; i++){
-			CDTplus::Face_handle n = fh->neighbor(i);
+			CDT::Face_handle n = fh->neighbor(i);
 			
 			//CDTplus::Edge e(fh,i);
 			//std::cout<<"EDGE"<<std::endl;
@@ -189,15 +188,15 @@ void FindPath(CDTplus& ct, CDTplus::Face_handle start,
 			//std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
 
 			Triangle current = FaceToTriangle(n);	
-			if(n->info().in_domain() ){
+			if(n->info().in_domain()  ){
 				
 				queue.push_back(n);
 				std::cout<<"Push"<<std::endl;
-				CGAL::cpp11::result_of<Intersect_2(Triangle,Point_2)>::type
+				CGAL::cpp11::result_of<Intersect_2(Triangle,Point)>::type
 			    result = CGAL::intersection(current,EndPoint);
 				if(result){
 					std::cout<<"PATH FOUND"<<std::endl;
-					std::list<CDTplus::Face_handle>::iterator it;
+					std::list<CDT::Face_handle>::iterator it;
 					path.push_back(n);
 					int step = 0;
 					for( it = path.begin(); it != path.end(); it++){
@@ -273,8 +272,8 @@ int main(int argc,char* argv[]){
 	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
 	outdomain.set_wired(false);
 
-	Point_2 StartPoint(0,(box_size-1)/2);
-	Point_2 EndPoint(box_size-1,(box_size-1)/2);
+	Point StartPoint(0,(box_size-1)/2);
+	Point EndPoint(box_size-1,(box_size-1)/2);
 
 
 	gv.set_vertex_radius(50);
@@ -292,20 +291,24 @@ int main(int argc,char* argv[]){
 
 	Polygon_2 Bounding_box;
 	Bounding_box.push_back(Point(0,0));
-	Bounding_box.push_back(Point(0,box_size-1));
 	Bounding_box.push_back(Point(box_size-1,0));
 	Bounding_box.push_back(Point(box_size-1,box_size-1));
+	Bounding_box.push_back(Point(0,box_size-1));
 
 
-	CDTplus cdt;
-	cdt.insert_constraint(Point(0,0), Point(0,box_size-1));
+	CDT cdt;
+	/*cdt.insert_constraint(Point(0,0), Point(0,box_size-1));
 	cdt.insert_constraint(Point(0,box_size-1), Point(box_size-1,box_size-1));
 	cdt.insert_constraint(Point(box_size-1,box_size-1), Point(box_size-1,0));
 	cdt.insert_constraint(Point(box_size-1,0), Point(0,0));
+	*/
+
+	cdt.insert_constraint(Bounding_box.vertices_begin(),Bounding_box.vertices_end(),true);
+
 	std::cout<<"Inserted bounding box"<<std::endl;
 	std::vector<K::Iso_rectangle_2> obstacles_vector;
 
-	K::Iso_rectangle_2 rect_bb(Point(0,0),Point(0,box_size-1),Point(box_size-1,box_size-1),Point_2(box_size-1,0));
+	K::Iso_rectangle_2 rect_bb(Point(0,0),Point(0,box_size-1),Point(box_size-1,box_size-1),Point(box_size-1,0));
 
 
 	obstacles_vector.push_back(rect_bb);
@@ -332,8 +335,8 @@ int main(int argc,char* argv[]){
 
 
 
-		   std::list<Point_2>   initial_point_set;
-		   std::list<Point_2>   positive_point_set;
+		   std::list<Point>   initial_point_set;
+		   std::list<Point>   positive_point_set;
 		   CGAL::Random         rand;
 	    	std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
 		   	int size = rand.get_int(4, MAX_POLY_SIZE);
@@ -343,29 +346,45 @@ int main(int argc,char* argv[]){
 			
 
 
-			for(std::list<Point_2>::iterator it = initial_point_set.begin();it != initial_point_set.end() ; it++){
+			for(std::list<Point>::iterator it = initial_point_set.begin();it != initial_point_set.end() ; it++){
 				if((it->hx() < 0)){
 					if((it->hy() < 0)){
-						positive_point_set.push_back(Point_2(-it->hx(),-it->hy()));
+						positive_point_set.push_back(Point(-it->hx(),-it->hy()));
 					}
 					else{
-						positive_point_set.push_back(Point_2(-it->hx(),it->hy()));
+						positive_point_set.push_back(Point(-it->hx(),it->hy()));
 					}
 				}
 				else{
 					if((it->hy() < 0)){
-						positive_point_set.push_back(Point_2(it->hx(),-it->hy()));
+						positive_point_set.push_back(Point(it->hx(),-it->hy()));
 					}
 					else{
-						positive_point_set.push_back(Point_2(it->hx(),it->hy()));
+						positive_point_set.push_back(Point(it->hx(),it->hy()));
 					}
 				}
 			}
 
 
-		    CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
+		    /*CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
 		                          positive_point_set.begin());
-				
+			*/
+			//if(Obstacle.orientation() == CGAL::CLOCKWISE)
+			//	Obstacle.reverse_orientation();
+		    if(i == 0){
+			  Obstacle.push_back(Point(5,5));
+			  Obstacle.push_back(Point(15,5));
+			  Obstacle.push_back(Point(15,15));
+			  Obstacle.push_back(Point(5,15));	
+		    }
+		    else{
+		   	  Obstacle.push_back(Point(3,10));
+			  Obstacle.push_back(Point(8,14));
+			  Obstacle.push_back(Point(9,20));
+			  Obstacle.push_back(Point(3,30));		
+		    }
+			
+			 
 
 			
 					     // check if the polygon is convex
@@ -374,7 +393,7 @@ int main(int argc,char* argv[]){
 			
 
 
-			std::_List_iterator<CGAL::Point_2<CGAL::Epeck> > iter = Obstacle.vertices_begin();
+			std::_List_iterator<Point> iter = Obstacle.vertices_begin();
 			
 			Point a(iter->hx(),iter->hy());	
 			iter++;	
@@ -402,10 +421,10 @@ int main(int argc,char* argv[]){
 			K::Iso_rectangle_2 rect_obstacle(a,b,c,d);
 
 			//std::cout <<  "\t " << Obstacle <<std::endl;
-			CGAL::cpp11::result_of<Intersect_2(Point_2,K::Iso_rectangle_2)>::type
+			CGAL::cpp11::result_of<Intersect_2(Point,K::Iso_rectangle_2)>::type
 		    result1 = CGAL::intersection(StartPoint,rect_obstacle);
 
-			CGAL::cpp11::result_of<Intersect_2(Point_2,K::Iso_rectangle_2)>::type
+			CGAL::cpp11::result_of<Intersect_2(Point,K::Iso_rectangle_2)>::type
 		    result2 = CGAL::intersection(EndPoint,rect_obstacle);	
 
 
@@ -473,19 +492,13 @@ int main(int argc,char* argv[]){
 
 	
 	int count=0;
-	for (CDTplus::Finite_faces_iterator fit=cdt.finite_faces_begin(); fit!=cdt.finite_faces_end();++fit){
+	for (CDT::Finite_faces_iterator fit=cdt.finite_faces_begin(); fit!=cdt.finite_faces_end();++fit){
 		if (fit->info().in_domain())
 			count++;
 	}
 
 	std::cout << "There are " << count << " facets in the domain." << std::endl;
 
-
-	for (CDTplus::Subconstraint_iterator scit = cdt.subconstraints_begin();
-		scit != cdt.subconstraints_end();
-		++scit)  ++count;
-	std::cout << "The number of resulting constrained edges is  ";
-	std::cout <<  count << std::endl;
 
 
 
@@ -499,7 +512,7 @@ int main(int argc,char* argv[]){
 
 
 	std::cout << "Locate starting point..." << std::endl;
-	CDTplus::Face_handle start_face = cdt.locate(StartPoint,cdt.all_faces_begin());
+	CDT::Face_handle start_face = cdt.locate(StartPoint,cdt.all_faces_begin());
 	std::cout<<"Starting Triangle"<<std::endl;
 	Triangle start_triangle = FaceToTriangle(start_face);
 	//gv << CGAL::GREEN;
@@ -507,7 +520,7 @@ int main(int argc,char* argv[]){
 	PrintFace(start_face);
 
 	std::cout << "Locate ending point..." << std::endl;
-	CDTplus::Face_handle end_face = cdt.locate(EndPoint,cdt.all_faces_begin());
+	CDT::Face_handle end_face = cdt.locate(EndPoint,cdt.all_faces_begin());
 	std::cout<<"Ending Triangle"<<std::endl;
 	Triangle end_triangle = FaceToTriangle(end_face);
 	//gv << CGAL::ORANGE;
