@@ -1,15 +1,31 @@
+/*NIKOLAS GIALITSIS 111520140027 UPOLOGISTIKI GEWMETRIA */
+/*
+
+Compilation:
+cgal_create_CMakeLists -s robot
+cmake .
+make
+
+Execution
+./robot -size 100 -obstacles 2 -sleep 3 -freedom 0 
+*/
+
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
+#include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/Polygon_2.h>
 #include <CGAL/Triangle_2.h>
+#include <CGAL/Segment_2.h>
+#include <CGAL/Ray_2.h>
 #include <iostream>
 #include <CGAL/Iso_rectangle_2.h>
 #include <CGAL/point_generators_2.h>
 #include <CGAL/random_polygon_2.h>
 #include <CGAL/Random.h>
 #include <CGAL/algorithm.h>
+#include <CGAL/Line_2.h>
 
 //Geomview 
 #include <CGAL/IO/Geomview_stream.h>
@@ -28,6 +44,10 @@
 #include <typeinfo>
 #include <boost/optional/optional_io.hpp>
 #include <CGAL/enum.h>
+#include <fstream>
+#include <CGAL/squared_distance_2.h> //for 2D functions
+#include <CGAL/centroid.h>
+
 struct FaceInfo2
 {
 
@@ -55,14 +75,38 @@ typedef K::Triangle_2 Triangle;
 typedef std::vector<Point> Vector;
 typedef K::Intersect_2 Intersect_2;
 typedef K::Point_3 Point_3;
+typedef K::Line_2 Line;
+typedef K::Segment_2 Segment;
 
 
 
 typedef std::list<Point>                                Container;
 typedef CGAL::Polygon_2<K, Container>                     Polygon_2;
+typedef K::Ray_2  Ray;
 typedef CGAL::Creator_uniform_2<int, Point>             Creator;
 typedef CGAL::Random_points_in_square_2<Point, Creator> Point_generator;
+
+typedef CGAL::Delaunay_triangulation_2<K> Delaunay_triangulation_2;
+
 using std::cout; using std::endl;
+
+
+Triangle FaceToTriangle(CDT::Face_handle&);
+
+void PrintFace(CDT::Face_handle&);
+
+void  mark_domains(CDT& ct, 
+             CDT::Face_handle , 
+             int , 
+             std::list<CDT::Edge>& ,
+             CGAL::Geomview_stream& );
+void mark_domains(CDT& ,CGAL::Geomview_stream&) ;
+
+std::list<CDT::Face_handle> FindPath(
+	CDT&,CDT::Face_handle,Point,Point,std::vector<K::Iso_rectangle_2>,
+	CGAL::Geomview_stream&,int
+);
+
 
 Triangle FaceToTriangle(CDT::Face_handle& face){
 	Point a,b,c;
@@ -89,28 +133,29 @@ void  mark_domains(CDT& ct,
              CDT::Face_handle start, 
              int index, 
              std::list<CDT::Edge>& border,
-             CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain )
+             CGAL::Geomview_stream& indomain
+ 			)
 {
   if(start->info().nesting_level != -1){
     return;
   }
-  std::list<CDT::Face_handle> queue;
-  queue.push_back(start);
-  while(! queue.empty()){
-    CDT::Face_handle fh = queue.front();
-    queue.pop_front();
+  std::list<CDT::Face_handle> stack;
+  stack.push_back(start);
+  while(! stack.empty()){
+    CDT::Face_handle fh = stack.front();
+    stack.pop_front();
     if(fh->info().nesting_level == -1){
       fh->info().nesting_level = index;
       //std::cout<<"INDEX "<<index<<std::endl;
       Triangle t = FaceToTriangle(fh);
-      if(fh->info().in_domain()){
+      if(fh->info().nesting_level == 1){
       	indomain << CGAL::BLUE;
       	indomain << t;
-      }
-      else{
-      	outdomain << CGAL::RED;
-      	outdomain << t;
-      }      
+      }  
+      else if(fh->info().nesting_level > 1){
+      	indomain << CGAL::RED;
+      	indomain << t;
+      }  
       
 
       for(int i = 0; i < 3; i++){
@@ -118,9 +163,16 @@ void  mark_domains(CDT& ct,
         CDT::Face_handle n = fh->neighbor(i);
         if(n->info().nesting_level == -1){
           if(ct.is_constrained(e)) border.push_back(e);
-          else queue.push_back(n);
+          else stack.push_back(n);
         }
       }
+    }
+    else{
+    	if(fh->info().nesting_level > 1){
+    		Triangle t = FaceToTriangle(fh);
+	      	indomain << CGAL::RED;
+	      	indomain << t;
+      }  
     }
   }
 }
@@ -130,21 +182,21 @@ void  mark_domains(CDT& ct,
 //level of 0. Then we recursively consider the non-explored facets incident 
 //to constrained edges bounding the former set and increase the nesting level by 1.
 //Facets in the domain are those with an odd nesting level.
-void mark_domains(CDT& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_stream&  outdomain){
+void mark_domains(CDT& cdt,CGAL::Geomview_stream& indomain){
  
   for(CDT::All_faces_iterator it = cdt.all_faces_begin(); it != cdt.all_faces_end(); ++it){
     it->info().nesting_level = -1;
   }
  
   std::list<CDT::Edge> border;
-  mark_domains(cdt, cdt.infinite_face(), 0, border,indomain,outdomain);
- 
+  mark_domains(cdt, cdt.infinite_face(), 0, border,indomain);
+  
   while(! border.empty()){
     CDT::Edge e = border.front();
     border.pop_front();
     CDT::Face_handle n = e.first->neighbor(e.second);
     if(n->info().nesting_level == -1){
-      mark_domains(cdt, n, e.first->info().nesting_level+1, border,indomain,outdomain);
+      mark_domains(cdt, n, e.first->info().nesting_level+1, border,indomain);
     }
  
   }
@@ -152,89 +204,243 @@ void mark_domains(CDT& cdt,CGAL::Geomview_stream& indomain, CGAL::Geomview_strea
 
 
 
+void PaintObstacles(std::vector<Point> obstacles_vector,CGAL::Geomview_stream& gv){
+	gv << CGAL::RED;
+	
+	for(std::vector<Point>::iterator obit = obstacles_vector.begin();
+		obit != obstacles_vector.end() ; obit ++)	
+	{
+
+		Polyhedron P;
+		Point_3 a(obit->x(),obit->y(),0);
+		obit++;
+		Point_3 b(obit->x(),obit->y(),0);
+		obit++;
+		Point_3 c(obit->x(),obit->y(),0);
+		obit++;
+		Point_3 d(obit->x(),obit->y(),0);		
+		P.make_tetrahedron(a,b,c,d);
+		gv << P;		
+
+	}	
+	
+
+}
 
 
-
-void FindPath(CDT& ct, CDT::Face_handle start, 
+std::list<CDT::Face_handle> FindPath(CDT& ct, CDT::Face_handle start, 
+	Point StartPoint,
 	Point  EndPoint,
-	std::vector<K::Iso_rectangle_2> obstacles_vector,
+	std::vector<Point> obstacles_vector,
 	CGAL::Geomview_stream& gv,int sleep_time){
 
-	std::list<CDT::Face_handle> queue;
+	std::list<CDT::Face_handle> stack;
 	std::list<CDT::Face_handle> path;
-
-	std::cout<<"START LEVEL : " << start->info().nesting_level<<std::endl;
-	queue.push_back(start);
+	stack.push_back(start);
 	std::cout<<"Push"<<std::endl;
-	while(! queue.empty()){
-		CDT::Face_handle fh = queue.back();
-		queue.pop_back();
+	double current_dist = 100000000.0;
+	double best_dist = 100000000.0;
+
+	std::list<CDT::Face_handle> best_path;	
+
+	std::list<std::list<CDT::Face_handle> > output;
+	bool path_exists = false;
+
+	sleep(sleep_time);
+	while(! stack.empty()){
+		CDT::Face_handle fh = stack.back();
+		stack.pop_back();
+		if(!output.empty())path = output.back();
 		path.push_back(fh);
+		output.push_back(path);
+	
+
+		std::list<CDT::Face_handle>::iterator pit;
+		std::list<CDT::Face_handle> temp;					
+		temp = output.back();					
+		
+
+		gv << CGAL::GREEN;
+		gv << StartPoint;
+		gv << CGAL::RED;
+		gv << EndPoint;
+		PaintObstacles(obstacles_vector,gv);
+		for( pit = temp.begin(); pit != temp.end(); pit++){
+			Triangle t = FaceToTriangle(*pit);
+			gv << CGAL::BLUE;
+			gv << t;
+			
+			//PrintFace(*it);
+		}
+	
+		sleep(sleep_time);
+		gv.clear();		
+		gv << ct;
+		PaintObstacles(obstacles_vector,gv);
+		
+
+
+
+		cout<<"OUTPUT SIZE "<<output.size()<<endl<<endl<<endl;
 		std::cout<<"Pop" << std::endl;
+		if(fh->info().visited == true){
+			cout<<"\tBacktracking..."<<endl;
+			output.pop_back();
+			while(true){
+				if(output.empty() || stack.empty())break;
+				CDT::Face_handle  c = output.back().back();
+				bool reset = true;
+				for(int x = 0;  x < 3; x++){
+					CDT::Face_handle n = c ->neighbor(x);			
+					if (n == stack.back()){
+						reset = false;
+						break;
+					}
+
+
+					
+				}			
+				if(!reset)break;
+				else {
+					output.pop_back();			
+				}							
+			}		
+			continue;
+		}
+
 		fh->info().visited = true;
 		std::cout<<"\tVisit face"<<std::endl;
 		bool dead_end = true;
+		int free_neighbors = 0;
 		for(int i = 0; i < 3; i++){
 			CDT::Face_handle n = fh->neighbor(i);
 			
-			//CDTplus::Edge e(fh,i);
-			//std::cout<<"EDGE"<<std::endl;
-			//std::cout << e->first() << std::endl;
-			//PrintFace(e.first());
 			if(n->info().visited){
 				std::cout<<"\t\tneighbor visited"<<std::endl;
 				continue;
 			}
-			//std::cout<<"\tlevel "<<n->info().nesting_level<<std::endl;
-
 			Triangle current = FaceToTriangle(n);	
-			if(n->info().in_domain()  ){
-				
-				queue.push_back(n);
+			if(n->info().nesting_level == 1 ){
+				free_neighbors++;
+				dead_end = false;
+				stack.push_back(n);
 				std::cout<<"Push"<<std::endl;
 				CGAL::cpp11::result_of<Intersect_2(Triangle,Point)>::type
 			    result = CGAL::intersection(current,EndPoint);
 				if(result){
+					stack.pop_back();
+
 					std::cout<<"PATH FOUND"<<std::endl;
+					path_exists = true;
 					std::list<CDT::Face_handle>::iterator it;
-					path.push_back(n);
+					std::list<CDT::Face_handle> final_path;					
+					final_path = output.back();					
+					final_path.push_back(n);
 					int step = 0;
-					for( it = path.begin(); it != path.end(); it++){
+
+					gv.clear();
+					gv << CGAL::GREEN;
+					gv << StartPoint;
+					gv << CGAL::RED;
+					gv << EndPoint;
+
+					PaintObstacles(obstacles_vector,gv);
+					gv << ct;
+					gv << CGAL::YELLOW;
+					current_dist = 0;
+					for( it = final_path.begin(); it != final_path.end(); it++){
 						Triangle t = FaceToTriangle(*it);
-						gv << CGAL::BLUE;
 						gv << t;
-						//std::cout<<"Step "<<step++ <<std::endl;
-						//PrintFace(*it);
-						sleep(sleep_time);
+						for(std::vector<Point>::iterator obit = obstacles_vector.begin();
+							obit != obstacles_vector.end() ; obit++)	
+						{
+							std::vector<Point> obstacle_vertices;
+							for(int p = 0 ; p < 4 ; p ++){
+								obstacle_vertices.push_back(*obit);
+							}						
+
+							Point obstacle_center = CGAL::centroid(obstacle_vertices.begin(),obstacle_vertices.end());
+							current_dist += CGAL::squared_distance(t,obstacle_center);
+						}			
 					}
-					return;
+					if(current_dist <= best_dist){
+						best_dist = current_dist;
+						best_path.clear();
+						std::copy(final_path.begin(),final_path.end(),std::back_inserter(best_path));
+					}	
+
+					dead_end = true;
+					sleep(sleep_time);
+					gv.clear();
+					gv << CGAL::GREEN;
+					gv << StartPoint;
+					gv << CGAL::RED;
+					gv << EndPoint;
+					gv << ct;
+								
+					break;
 				}
-
-
 				else{
 
 					std::cout<<"\t\tneighbor is an obstacle"<<std::endl;	
-				}
-				
+				}		
 			}
 			
 		}
 		if(dead_end){
-
 			std::cout<<"\tDead end\n"<<std::endl;
-			//path.pop_back();			
+			output.pop_back();	
+			while(true){
+				if(output.empty() || stack.empty())break;
+				CDT::Face_handle  c = output.back().back();
+				bool reset = true;
+				for(int x = 0;  x < 3; x++){
+					CDT::Face_handle n = c ->neighbor(x);			
+					if (n == stack.back()){
+						reset = false;
+						break;
+					}
 
+
+					
+				}			
+				if(!reset)break;
+				else {
+					output.pop_back();			
+				}							
+			}		
 		}
 	}
-	if(queue.empty()){
-		std::cout<<"NO VIABLE PATH FOUND" <<std::endl;
+
+	if(!path_exists){
+		std::cout<<"NO VIABLE PATH FOUND" <<std::endl;		
+		std::list<CDT::Face_handle> empty_list;
+		return empty_list;
 	}
 	else{
-		std::cout<<"Uknown Path"<<std::endl;
+		std::cout<<"Printing Best Path"<<endl;
+		std::list<CDT::Face_handle>::iterator it;
+		gv.clear();
+		gv << ct;
+		gv << CGAL::GREEN;
+		gv << StartPoint;
+		gv << CGAL::RED;
+		gv << EndPoint;
+		for( it = best_path.begin(); it != best_path.end(); it++){
+			Triangle t = FaceToTriangle(*it);
+			gv << CGAL::ORANGE;
+			gv << t;
+			
+		}
+		return best_path;
 	}
-	return;
+	
 
 }
+
+
+
+
 
 
 double RADIUS;
@@ -243,17 +449,31 @@ unsigned int MAX_POLY_SIZE;
 int main(int argc,char* argv[]){
 
 
-	unsigned int box_size = (argc>2) && (strcmp(argv[1],"-size")==0) ? atoi(argv[2]) : 30;
-	unsigned int num_obstacles = (argc>4) && (strcmp(argv[3],"-obstacles")==0) ? atoi(argv[4]) : box_size/6;
-	int sleep_time = (argc>6) && (strcmp(argv[5],"-sleep")==0) ? atoi(argv[6]) : 0;
-	RADIUS = box_size-0.1;
-	MAX_POLY_SIZE = 50;
+	unsigned int box_size =  30;
+	unsigned int num_obstacles = 2;
+	int sleep_time =  0;
+	unsigned int freedom = 0 ;
+
+	for(int i = 0 ; i < argc ; i++){
+		if(strcmp(argv[i],"-size")==0)box_size = atoi(argv[i+1]);
+		else if (strcmp(argv[i],"-obstacles")==0)num_obstacles = atoi(argv[i+1]);
+		else if (strcmp(argv[i],"-sleep")==0)sleep_time = atoi(argv[i+1]);
+		else if (strcmp(argv[i],"-freedom")==0) freedom = atoi(argv[i+1]);
+		else continue;
+		i++;
+	}
+
+	RADIUS = box_size-1;
+	MAX_POLY_SIZE = box_size/2.0;
 	std::cout << "Box :" << box_size << "x"<< box_size << std::endl;
 	std::cout<<"Obstacles = " << num_obstacles << std::endl;
+	std::cout<<"Delay  = " << sleep_time << std::endl;
+	std::cout<<"Freedom = " << freedom << std::endl;
+
 
 	CGAL::Geomview_stream gv(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
 	gv.clear();
-	gv.set_line_width(10);
+	gv.set_line_width(5);
 	gv.set_bg_color(CGAL::Color(0, 200, 200));
 	gv.set_wired(true);
 
@@ -261,22 +481,14 @@ int main(int argc,char* argv[]){
 
 	CGAL::Geomview_stream indomain(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
 	indomain.clear();
-	indomain.set_line_width(10);
-	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
-	indomain.set_wired(false);
+	indomain.set_line_width(5);
+	indomain.set_bg_color(CGAL::Color(0, 200, 200));
+	indomain.set_wired(true);
 
 
-	CGAL::Geomview_stream outdomain(CGAL::Bbox_3(0,0, 0,box_size-1,box_size-1,0));
-	outdomain.clear();
-	outdomain.set_line_width(10);
-	//lvlgv.set_bg_color(CGAL::Color(0, 200, 200));
-	outdomain.set_wired(false);
 
 	Point StartPoint(0,(box_size-1)/2);
 	Point EndPoint(box_size-1,(box_size-1)/2);
-
-
-	gv.set_vertex_radius(50);
 
 	gv << CGAL::GREEN;
 	gv << StartPoint;
@@ -288,209 +500,161 @@ int main(int argc,char* argv[]){
 	//Insert the polygons into a constrained triangulation
 	
 
-
 	Polygon_2 Bounding_box;
 	Bounding_box.push_back(Point(0,0));
 	Bounding_box.push_back(Point(box_size-1,0));
 	Bounding_box.push_back(Point(box_size-1,box_size-1));
 	Bounding_box.push_back(Point(0,box_size-1));
 
-
 	CDT cdt;
-	/*cdt.insert_constraint(Point(0,0), Point(0,box_size-1));
-	cdt.insert_constraint(Point(0,box_size-1), Point(box_size-1,box_size-1));
-	cdt.insert_constraint(Point(box_size-1,box_size-1), Point(box_size-1,0));
-	cdt.insert_constraint(Point(box_size-1,0), Point(0,0));
-	*/
-
 	cdt.insert_constraint(Bounding_box.vertices_begin(),Bounding_box.vertices_end(),true);
 
 	std::cout<<"Inserted bounding box"<<std::endl;
-	std::vector<K::Iso_rectangle_2> obstacles_vector;
-
-	K::Iso_rectangle_2 rect_bb(Point(0,0),Point(0,box_size-1),Point(box_size-1,box_size-1),Point(box_size-1,0));
+	std::vector<Point> obstacles_vector;
 
 
-	obstacles_vector.push_back(rect_bb);
-	//construct two non-intersecting nested polygons  
 
-	bool obstacle_intersect = true;
+	//Dimiourgia Empodiwn
 	for (int i = 0; i < num_obstacles ; i++) {
-		
-		int tries = 0;
-		obstacle_intersect = true;
-		while(obstacle_intersect){
-			
-			if(tries == 10){
-				std::cout<<"Grid size too small or too many obstacles:= unable to place obstacle #"<<i<<std::endl;
-				return -1;
-			}					
-		   
-		   Polygon_2 Obstacle;
-		   /*Obstacle.push_back(Point_2(20,20));
-		   Obstacle.push_back(Point_2(20,60));
-		   Obstacle.push_back(Point_2(50,70));
-		   Obstacle.push_back(Point_2(60,30));
-			*/
+	
+			Polygon_2 Obstacle;
+			std::list<Point>   initial_point_set;
+			std::list<Point>   positive_point_set;
+			CGAL::Random         rand;
+			std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
 
+			//Dimiourgise tessera monadika simeia se aktina isi me ton xwro
+			CGAL::copy_n_unique(Point_generator(RADIUS), 4,
+			               std::back_inserter(initial_point_set));
 
-
-		   std::list<Point>   initial_point_set;
-		   std::list<Point>   positive_point_set;
-		   CGAL::Random         rand;
-	    	std::cerr << "Seed = " <<  rand.get_seed() << std::endl;
-		   	int size = rand.get_int(4, MAX_POLY_SIZE);
-
-	   		CGAL::copy_n_unique(Point_generator(RADIUS), size,
-		                       std::back_inserter(initial_point_set));
-			
-
+			//Metetrepse ta arnitika simeia se thetika,
+			//An ta simeia apexoun apostasi < freedom apo to bounding box
+			//sprwksta prosta auto,gia na diskoleutei to robot
 
 			for(std::list<Point>::iterator it = initial_point_set.begin();it != initial_point_set.end() ; it++){
-				if((it->hx() < 0)){
-					if((it->hy() < 0)){
-						positive_point_set.push_back(Point(-it->hx(),-it->hy()));
+				if((it->x() < 0)){
+					if((it->y() < 0)){					
+						if(-it->x() < freedom)
+							positive_point_set.push_back(Point(0,-it->y()));
+						else if(-it->y() < freedom)
+							positive_point_set.push_back(Point(-it->x(),0));
+						else if(-it->x() > box_size-1-freedom)
+							positive_point_set.push_back(Point(box_size-1,-it->y()));
+						else if(-it->y() > box_size-1-freedom)
+							positive_point_set.push_back(Point(-it->x(),box_size-1));
+						else
+							positive_point_set.push_back(Point(-it->x(),-it->y()));						
 					}
 					else{
-						positive_point_set.push_back(Point(-it->hx(),it->hy()));
+						if(-it->x() < freedom)
+							positive_point_set.push_back(Point(0,it->y()));
+						else if(it->y() < freedom)
+							positive_point_set.push_back(Point(-it->x(),0));
+						else if(-it->x() > box_size-1-freedom)
+							positive_point_set.push_back(Point(box_size-1,it->y()));
+						else if(it->y() > box_size-1-freedom)
+							positive_point_set.push_back(Point(-it->x(),box_size-1));
+						else
+							positive_point_set.push_back(Point(-it->x(),it->y()));						
 					}
 				}
 				else{
-					if((it->hy() < 0)){
-						positive_point_set.push_back(Point(it->hx(),-it->hy()));
+					if((it->y() < 0)){
+						if(it->x() < freedom)
+							positive_point_set.push_back(Point(0,-it->y()));
+						else if(-it->y() < freedom)
+							positive_point_set.push_back(Point(it->x(),0));
+						else if(it->x() > box_size-1-freedom)
+							positive_point_set.push_back(Point(box_size-1,-it->y()));
+						else if(-it->y() > box_size-1-freedom)
+							positive_point_set.push_back(Point(it->x(),box_size-1));
+						else
+							positive_point_set.push_back(Point(it->x(),-it->y()));		
 					}
 					else{
-						positive_point_set.push_back(Point(it->hx(),it->hy()));
+						if(it->x() < freedom)
+							positive_point_set.push_back(Point(0,it->y()));
+						else if(it->y() < freedom)
+							positive_point_set.push_back(Point(it->x(),0));
+						else if(it->x() > box_size-1-freedom)
+							positive_point_set.push_back(Point(box_size-1,it->y()));
+						else if(it->y() > box_size-1-freedom)
+							positive_point_set.push_back(Point(it->x(),box_size-1));
+						else
+							positive_point_set.push_back(Point(it->x(),it->y()));	
 					}
 				}
 			}
 
 
-		    /*CGAL::random_polygon_2(positive_point_set.size(), std::back_inserter(Obstacle),
+	
+			//Dimiourgise to polugono me ta tuxaia simeia
+		    CGAL::random_polygon_2(4, std::back_inserter(Obstacle),
 		                          positive_point_set.begin());
-			*/
-			//if(Obstacle.orientation() == CGAL::CLOCKWISE)
-			//	Obstacle.reverse_orientation();
-		    if(i == 0){
-			  Obstacle.push_back(Point(5,5));
-			  Obstacle.push_back(Point(15,5));
-			  Obstacle.push_back(Point(15,15));
-			  Obstacle.push_back(Point(5,15));	
-		    }
-		    else{
-		   	  Obstacle.push_back(Point(3,10));
-			  Obstacle.push_back(Point(8,14));
-			  Obstacle.push_back(Point(9,20));
-			  Obstacle.push_back(Point(3,30));		
-		    }
-			
-			 
 
-			
-					     // check if the polygon is convex
+
+		    assert(Obstacle.vertices_num() == 4);
+
+		    //Elegxos prosanatolismou polugonou
+			if(Obstacle.orientation() == CGAL::CLOCKWISE)
+				Obstacle.reverse_orientation();
+		    
+		    if(Obstacle.orientation() != CGAL::COUNTERCLOCKWISE){
+		    	cout << "Invalid orientation"<<std::endl;
+		    	return -1;
+		    }
+			//Elegxos kurtotitas empodiou
   			std::cout << "The polygon is " <<
     		(Obstacle.is_convex() ? "" : "not ") << "convex." << std::endl;
 			
 
-
+			//Apomonose ta stoixeia gia na topothetithoun ston obstacles_vector
 			std::_List_iterator<Point> iter = Obstacle.vertices_begin();
 			
-			Point a(iter->hx(),iter->hy());	
+			Point a(iter->x(),iter->y());	
+			cout<<"A : "<< a<< endl;
 			iter++;	
-			Point b(iter->hx(),iter->hy());	
+			Point b(iter->x(),iter->y());	
+			cout<<"B : "<< b<< endl;
+			iter++;
+			Point c(iter->x(),iter->y());	
+			cout<<"C : "<< c<< endl;
 			iter++;	
-			Point c(iter->hx(),iter->hy());	
-			iter++;	
-			Point d(iter->hx(),iter->hy());	
+			Point d(iter->x(),iter->y());	
+			cout<<"D : "<< d<< endl;
 
-
-		   	iter = Obstacle.vertices_begin();
-			Point_3 p(iter->hx(),iter->hy(),0);	
-			iter++;	
-			Point_3 q(iter->hx(),iter->hy(),0);	
-			iter++;	
-			Point_3 r(iter->hx(),iter->hy(),0);	
-			iter++;	
-			Point_3 s(iter->hx(),iter->hy(),0);	
-					
-
-			Polyhedron P;
-			P.make_tetrahedron( p, q, r, s);
-
-
-			K::Iso_rectangle_2 rect_obstacle(a,b,c,d);
-
-			//std::cout <<  "\t " << Obstacle <<std::endl;
-			CGAL::cpp11::result_of<Intersect_2(Point,K::Iso_rectangle_2)>::type
-		    result1 = CGAL::intersection(StartPoint,rect_obstacle);
-
-			CGAL::cpp11::result_of<Intersect_2(Point,K::Iso_rectangle_2)>::type
-		    result2 = CGAL::intersection(EndPoint,rect_obstacle);	
-
-
-		    bool obstacles_overlap = false;
-		   
-		    for(int l = 0 ; l < obstacles_vector.size() ; l++){
-		    	K::Iso_rectangle_2 prev_obstacle = obstacles_vector.at(l);
-
-				CGAL::cpp11::result_of<Intersect_2(K::Iso_rectangle_2,K::Iso_rectangle_2)>::type
-			    result = CGAL::intersection(prev_obstacle,rect_obstacle);	
-			   // std::cout<<"check for obstacles overlapping fully"<<std::endl;
-			    if(result){
-			    	obstacles_overlap = true;
-			    	break;
-			    }
-		    }
-		    
-			
-		    
-			if((!result1)&& (!result2) && (!obstacles_overlap)){
-				obstacle_intersect = false;
-				//std::cout<<"Obstacle : "<<Obstacle<<std::endl;
+			cout << std::endl;
+		   	
 				
-				//cdt.insert_constraint(Obstacle.vertices_begin(), Obstacle.vertices_end(), true);
+			//Eisigage to empodio stin trigwnopoihsh
+			cdt.insert_constraint(Obstacle.vertices_begin(),Obstacle.vertices_end(),true);
 
-				//std::_List_iterator<CGAL::Point_2<CGAL::Epeck> > c = Obstacle.vertices_begin();
-
-
-				cdt.insert_constraint(Obstacle.vertices_begin(),Obstacle.vertices_end(),true);
-				gv << CGAL::RED;
-				gv << P;
-
-
-				if(!cdt.is_valid()){
-					std::cout<<"CDT not valid"<<std::endl;
-					return -2;
-				}
-				obstacles_vector.push_back(rect_obstacle);
-				std::cout<<"Placed obstacle after "<<tries<<" tries"<<std::endl;
-
-
+			//Elegxe tin orthotita tis trigwnopoihshs
+			if(!cdt.is_valid()){
+				std::cout<<"CDT not valid"<<std::endl;
+				return -2;
 			}
-			
-			tries++;
-		}
 
-	
+			obstacles_vector.push_back(a);		
+			obstacles_vector.push_back(b);
+			obstacles_vector.push_back(c);
+			obstacles_vector.push_back(d);	
+		
 	} 
 
 
 
 	assert(Obstacles.size() == num_obstacles);
-	
 
-	//Mark facets that are inside the domain bounded by the polygon
-	mark_domains(cdt,indomain,outdomain);
+	indomain << cdt;
 
+	//Arithmise ta faces tis trigwnopoihshs 
+	//ksekinontas apo to infinite vertex kai epipedo 0(diladi eksw ap to bounding box)
+	//etsi wste ta faces epipedou 1 na apoteloun ton eleuthero xwro
+	//se kathe epanalipsi to epipedo auksanetai
 
+	mark_domains(cdt,indomain);
 
-/*	std::cout << "Enter a key to finish" << std::endl;
-	char ch;
-	std::cin >> ch;
-*/
-
-
-	
 	int count=0;
 	for (CDT::Finite_faces_iterator fit=cdt.finite_faces_begin(); fit!=cdt.finite_faces_end();++fit){
 		if (fit->info().in_domain())
@@ -498,37 +662,122 @@ int main(int argc,char* argv[]){
 	}
 
 	std::cout << "There are " << count << " facets in the domain." << std::endl;
-
-
-
-
 	std::cout << "Drawing 2D Constrained Delaunay triangulation in wired mode.\n";
 	
-	gv << CGAL::RED;
+	
 	gv << cdt;
-
-	std::cout << "OK" << std::endl;
 	
 
+	std::cout << "OK" << std::endl;
+
+
+	//Entopise pou vrisketai to simeio ekkinisis kai to simeio stoxou
+	//stin trigwnopoihsh
 
 	std::cout << "Locate starting point..." << std::endl;
 	CDT::Face_handle start_face = cdt.locate(StartPoint,cdt.all_faces_begin());
 	std::cout<<"Starting Triangle"<<std::endl;
 	Triangle start_triangle = FaceToTriangle(start_face);
-	//gv << CGAL::GREEN;
-	//gv << start_triangle;
+	gv << CGAL::GREEN;
+	gv << start_triangle;
 	PrintFace(start_face);
 
 	std::cout << "Locate ending point..." << std::endl;
 	CDT::Face_handle end_face = cdt.locate(EndPoint,cdt.all_faces_begin());
 	std::cout<<"Ending Triangle"<<std::endl;
 	Triangle end_triangle = FaceToTriangle(end_face);
-	//gv << CGAL::ORANGE;
-	//gv << end_triangle;
+	gv << CGAL::ORANGE;
+	gv << end_triangle;
 	PrintFace(end_face);
+	 
 
-	FindPath(cdt,start_face,EndPoint,obstacles_vector,gv,sleep_time);
+	std::list<CDT::Face_handle> output;
+	
+	//Vres an uparxei,to kalutero monopati 
+	output = FindPath(cdt,start_face,StartPoint,EndPoint,obstacles_vector,gv,sleep_time);
 
+
+
+	sleep(2*sleep_time);
+	gv.clear();
+	gv << cdt;
+	gv << CGAL::GREEN;
+	PaintObstacles(obstacles_vector,gv);
+
+
+
+	//Dimiourgise to euthigrammo monopati tis diadromis tou robot ws eksis:
+	//Ksekinontas apo to simeio ekkinisis upologizetai to epomeno simeio
+	//tis kinisis , to opoio einai to meso tis pleuras pou enwnei to arxiko 
+	//me to epomeno trigwno tou monopatiou.
+	if(!output.empty()){
+		bool first_point = true;
+		Point last_point;
+		for(std::list<CDT::Face_handle>::iterator it = output.begin();it!=output.end();it++){
+		
+			std::vector<Point> points;
+			Triangle t = FaceToTriangle(*it);
+			Point p;
+			if(first_point){
+				first_point = false;
+				last_point = StartPoint;
+				it--;
+			}
+			else if(t == end_triangle){
+				Segment connect(last_point,EndPoint);
+				gv << CGAL::GREEN;
+				gv << connect;
+				break;
+			}
+			else{
+				it++;
+				if(it == output.end()){
+					it--;
+					break;
+				}
+
+				Triangle next_t = FaceToTriangle(*it);
+				it--;		
+			
+
+				CGAL::cpp11::result_of<Intersect_2(Triangle,Triangle)>::type result = CGAL::intersection(t,next_t);
+				if(!result){
+					break;
+					cout<<"No intersection"<<endl;
+				}
+
+				std::vector<Point>* lv = boost::get<std::vector<Point> >(&*result);		
+				Point* lp = boost::get<Point>(&*result);
+				Segment* ls = boost::get<Segment>(&*result);
+				Point midpoint;
+				if(lv)
+					midpoint = CGAL::midpoint(lv->front(),lv->back());
+				else if(lp){
+					midpoint = *lp;
+				}
+				else if(ls){
+					midpoint = CGAL::midpoint(ls->source(),ls->target());
+				}
+				else
+					cout<<"Unexpected return value"<<endl;
+
+				Segment connect(last_point,midpoint);			
+				gv << CGAL::GREEN;
+				gv << connect;
+				last_point = midpoint;
+			}
+
+			
+		}
+	}
+	gv << CGAL::BLUE;
+	gv << StartPoint;
+	gv<< CGAL::RED;
+	gv << EndPoint;
+
+
+
+	
 	std::cout << "Enter a key to finish" << std::endl;
 	char ch;
 	std::cin >> ch;
