@@ -1,0 +1,12 @@
+for i in range(0,1000):\
+	cmd.load("content/rotamer_conformations/Threonine_%d.pdb" %i , "MyMD")
+intra_fit MyMD
+orient
+smooth
+mset 1x300
+frame 1
+mview store, state=1
+frame 300
+mview store,state=1000
+frame 1
+mplay
