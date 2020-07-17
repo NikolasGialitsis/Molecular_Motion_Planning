@@ -37,7 +37,7 @@
 #include <CGAL/squared_distance_2.h> //for 2D functions
 #include <CGAL/centroid.h>
 
-
+#include <CGAL/convex_hull_3.h>
 #include <CGAL/Tetrahedron_3.h>
 
 #include <unordered_map>
@@ -235,9 +235,97 @@ std::vector< std::vector<int> >& edges,unordered_map<int,int>& nodeMap,std::vect
 
 		DepthFirst(nodes,neighbors[i],G,tetrahedra,edges,nodeMap,visited,gv);
 	}
-
 }
 
+
+
+Polyhedron PDB2Poly(string typex1,string typex2,string typex3){
+
+	std::vector<string> angletypes;
+	angletypes.push_back(typex1);
+	angletypes.push_back(typex2);
+	angletypes.push_back(typex3);
+
+	std::vector<double> minangles,maxangles;
+	for(int i = 0 ; i < 3 ; i++){
+		string type = angletypes[i];
+		if (type == "g+"){
+			minangles.push_back(0.0);
+			maxangles.push_back(120.0);
+		}
+		else if (type == "t"){
+			minangles.push_back(120.0);
+			maxangles.push_back(240.0);			
+		}
+		else if (type == "g+"){
+			minangles.push_back(240.0);
+			maxangles.push_back(360.0);			
+		}
+	}
+
+	std::vector<Point_3> pointset;
+
+	for(int i = 0 ; i < 2 ; i ++){
+		double c1,c2,c3;
+		if(i == 0){
+			c1 = minangles[0];
+		}
+		else{
+			c1 = maxangles[0];
+		}
+
+		for(int j = 0 ; j < 2 ; j ++){
+
+			if(j == 0){
+				c2 = minangles[1];
+			}
+			else{
+				c2 = maxangles[1];
+			}
+
+			for(int k = 0 ; k < 2 ; k ++){
+				if (k == 0){
+					c3 = minangles[2];
+				}	
+				else{
+					c3 = maxangles[2];
+				}
+				Point_3 p(c1,c2,c3);
+				cout<<"("<<c1<<","<<c2<<","<<c3<<")"<<endl;
+				pointset.push_back(p);
+
+			}
+		}
+	}
+
+	Polyhedron poly;
+
+  	CGAL::convex_hull_3(pointset.begin(), pointset.end(), poly);
+
+ 	std::cout << "The convex hull contains " << poly.size_of_vertices() << " vertices" << std::endl;
+  	typedef Polyhedron::Halfedge_around_facet_circulator Halfedge_facet_circulator;
+
+
+ 	for(Polyhedron::Facet_iterator pit = poly.facets_begin(); pit!= poly.facets_end() ; ++pit){
+
+ 		Halfedge_facet_circulator j = pit->facet_begin();
+	    CGAL_assertion( CGAL::circulator_size(j) >= 3);
+	    std::cout << CGAL::circulator_size(j) << ' ';
+	    cout<<"facet"<<endl;
+	    do{
+	    		cout << "\tvertex:" << j->vertex()->point() << endl;
+
+	      //std::cout << ' ' << std::distance(poly.vertices_begin(), j->vertex());
+	    }while ( ++j != pit->facet_begin());
+
+	    std::cout << std::endl;
+	 }
+	cout<<poly.is_valid()<<endl;
+
+	return poly;
+
+
+}
 
 int main(void){
 	
@@ -275,9 +363,16 @@ int main(void){
 	DepthFirst(nodes,start_T,end,tetrahedra,edges,nodeMap,visited,gv);
 
 
+	Polyhedron P = PDB2Poly("g+","t","g-");
+	gv << CGAL::BLUE;
+	gv << P;
+
 	char ch;
 	std::cout << "Enter a key to finish" << std::endl;
 	std::cin >> ch;
+
+
+
 
 
 
